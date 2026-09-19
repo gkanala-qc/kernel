@@ -7,8 +7,10 @@
  * https://www.mipi.org/mipi-sdca-v1-0-download
  */
 
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
@@ -23,6 +25,7 @@
 #include <sound/sdca_class.h>
 
 #define CLASS_SDW_ATTACH_TIMEOUT_MS	5000
+#define CLASS_SDW_PROBED_TIMEOUT_MS	500
 
 static int class_read_prop(struct sdw_slave *sdw)
 {
@@ -103,11 +106,20 @@ static void class_boot_work(struct work_struct *work)
 	struct sdca_class_drv *drv = container_of(work,
 						  struct sdca_class_drv,
 						  boot_work);
+	unsigned long deadline;
 	int ret;
 
 	ret = sdw_slave_wait_for_init(drv->sdw, CLASS_SDW_ATTACH_TIMEOUT_MS);
 	if (ret)
 		goto err;
+
+	deadline = jiffies + msecs_to_jiffies(CLASS_SDW_PROBED_TIMEOUT_MS);
+	while (!drv->sdw->probed && time_before(jiffies, deadline))
+		usleep_range(1000, 2000);
+
+	if (!drv->sdw->probed)
+		dev_warn(drv->dev,
+			 "timed out waiting for slave probe to complete\n");
 
 	regcache_cache_only(drv->dev_regmap, false);
 
