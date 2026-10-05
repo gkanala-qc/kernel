@@ -1676,7 +1676,12 @@ static int sdw_handle_slave_alerts(struct sdw_slave *slave)
 		goto io_err;
 	}
 
-	if (slave->id.class_id) {
+	/*
+	 * Read DP0_INT to check if the SDCA_CASCADE bit is set. Some SDCA
+	 * peripherals report a class_id of zero, so fall back to checking
+	 * whether any SDCA Functions were enumerated for this device.
+	 */
+	if (slave->id.class_id || slave->sdca_data.num_functions) {
 		ret = sdw_read_no_pm(slave, SDW_DP0_INT);
 		if (ret < 0) {
 			dev_err(&slave->dev,
@@ -1816,7 +1821,7 @@ static int sdw_handle_slave_alerts(struct sdw_slave *slave)
 			goto io_err;
 		}
 
-		if (slave->id.class_id) {
+		if (slave->id.class_id || slave->sdca_data.num_functions) {
 			ret = sdw_read_no_pm(slave, SDW_DP0_INT);
 			if (ret < 0) {
 				dev_err(&slave->dev,
