@@ -44,7 +44,14 @@ struct sdca_function_data;
  *           detection logic that must be reconfigured after every
  *           transition (e.g. toggling a mechanical comparator's
  *           polarity-select bit so the next opposite-direction transition
- *           is still seen).  May be NULL.
+ *           is still seen).  @detected_mode carries the mode the hardware
+ *           reported and @selected_mode is pre-loaded with the same value;
+ *           a codec whose hardware cannot classify the accessory on its own
+ *           may measure it in software and overwrite @selected_mode with
+ *           the real type, which the caller then applies to
+ *           GE:Selected_Mode in place of @detected_mode.  Leaving
+ *           @selected_mode untouched keeps the hardware-reported mode.  On
+ *           error the caller ignores @selected_mode entirely.  May be NULL.
  */
 struct sdca_class_hw_ops {
 	int (*hw_init)(struct sdw_slave *slave);
@@ -52,7 +59,9 @@ struct sdca_class_hw_ops {
 				 struct sdca_function_data *function);
 	int (*set_jack)(struct sdw_slave *slave, struct regmap *dev_regmap);
 	int (*post_jack_irq_process)(struct sdw_slave *slave,
-				     struct regmap *dev_regmap);
+				     struct regmap *dev_regmap,
+				     unsigned int detected_mode,
+				     unsigned int *selected_mode);
 };
 
 struct sdca_class_drv {

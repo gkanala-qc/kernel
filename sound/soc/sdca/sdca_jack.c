@@ -82,13 +82,26 @@ int sdca_jack_process(struct sdca_interrupt *interrupt)
 		break;
 	}
 
-	dev_dbg(dev, "%s: %#x\n", interrupt->name, val);
+	dev_err(dev, "%s: %#x\n", interrupt->name, val);
 
 	if (core->hw_ops && core->hw_ops->post_jack_irq_process) {
+		unsigned int selected = val;
+
+		/*
+		 * Devices without hardware accessory classification can
+		 * measure the plug type here and override the mode that gets
+		 * applied to GE:Selected_Mode below.
+		 */
 		ret = core->hw_ops->post_jack_irq_process(core->sdw,
-							  core->dev_regmap);
+							  core->dev_regmap,
+							  val, &selected);
 		if (ret)
 			dev_warn(dev, "jack post-process failed: %d\n", ret);
+		else if (selected != val) {
+			dev_err(dev, "%s: mode overridden %#x -> %#x\n",
+				interrupt->name, val, selected);
+			val = selected;
+		}
 	}
 
 	ucontrol = kzalloc_obj(*ucontrol);
@@ -275,6 +288,9 @@ int sdca_jack_report(struct sdca_interrupt *interrupt)
 
 	type = sdca_range_search(range, SDCA_SELECTED_MODE_INDEX,
 				 val, SDCA_SELECTED_MODE_TERM_TYPE);
+
+	dev_err(interrupt->dev, "%s: report selected mode %#x, terminal %#x, status %#x of mask %#x\n",
+		interrupt->name, val, type, type_get_mask(type), jack_state->mask);
 
 	snd_soc_jack_report(jack_state->jack, type_get_mask(type), jack_state->mask);
 

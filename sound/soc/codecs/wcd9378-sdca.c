@@ -102,13 +102,16 @@ static u32 range_pde_req_ps_data[] = { 0x0, 0x3 };
 /*
  * GE 35 SelectedMode -> terminal type.
  *
- * Tambora MBHC only handles mechanical detection; ADC HP/HS
- * discrimination is not implemented, so mode 1 (Unknown) is aliased
- * to Headphone (mode 4) to keep the DAPM path alive. Mode 2 (Line-out)
- * is not fitted on this board. Mode 0 (Unplugged/Safe_Mode) has no
- * Terminal Type per the SDCA spec, and is intentionally left out of
- * this table -- the GE 35 mode 0 SU route is left disconnected (see
- * ge35_mode0_controls below) instead of aliasing it to a fake entry.
+ * Modes 3 and 4 are the real results, chosen by the ADC classification in
+ * wcd9378_sdca_post_jack_irq_process().  Mode 1 (Unknown) is aliased to
+ * Headphone (mode 4) to keep the DAPM path alive; it is unreachable in
+ * practice while MBHC_CTRL DEVICE_DET ACCESSORY_TYPE stays at its reset
+ * value 3.  Mode 2 (Line-out) is not fitted on this board.  Mode 0
+ * (Unplugged/Safe_Mode) has no Terminal Type per the SDCA spec, and is
+ * intentionally left out of this table -- sdca_range_search() returns 0
+ * ("no terminal") for it, and the GE 35 mode 0 SU route is left
+ * disconnected (see ge35_mode0_controls below) instead of aliasing it to a
+ * fake entry.
  */
 static u32 range_ge35_mode_data[] = {
 	0x1, 0x6C0,	/* Unknown -> HPH (alias) */
@@ -718,7 +721,28 @@ static struct sdca_init_write wcd9378_sdca_init_table[] = {
 	{ .addr = 0x4018007B, .val = 0xA2 }, /* TX_COM_TXFE_DIV_CTL SEQ_BYPASS */
 	{ .addr = 0x40180465, .val = 0x17 }, /* PDM_WD_CTL0 TIME_OUT_SEL_PCM */
 	{ .addr = 0x40180466, .val = 0x17 }, /* PDM_WD_CTL1 TIME_OUT_SEL_PCM */
+	/*
+	 * Mic-bias bring-up, in the order wcd937x_MBIAS_MGR_ENABLE() writes it:
+	 * the TX SC bias clock first, then the per-channel noise filter, then
+	 * the LDO driver bias.
+	 *
+	 * ANA_TXSCBIAS_CLK_EN is bit 0 and comes up cleared (reset 0xE); the
+	 * TX0/1/2_ADC_CLK_EN bits above it are already set at reset.
+	 * NOISE_FILT_RES_VAL (bits 7:5) is left at its noisy POR default, so
+	 * every channel is given R7_259M here, leaving the EN_VREFGEN, EN_LDO
+	 * and LDO_BLEEDER_CTRL bits at their reset value 0x1A.
+	 *
+	 * IBIAS_LDO_DRIVER has to be set for the bias to drive its pin at all.
+	 * MICB2 feeds the headset mic, and MBHC classification measures that
+	 * line, so without this the mic reads 0mV and every accessory looks
+	 * like a headphone.
+	 */
+	{ .addr = 0x40180417, .val = 0x0F }, /* CDC_ANA_TX_CLK_CTL ANA_TXSCBIAS_CLK_EN */
+	{ .addr = 0x4018006B, .val = 0xFA }, /* MICB1_TEST_CTL_1 NOISE_FILT_RES_VAL */
 	{ .addr = 0x4018006C, .val = 0x01 }, /* MICB1_TEST_CTL_2 IBIAS_LDO_DRIVER */
+	{ .addr = 0x4018006E, .val = 0xFA }, /* MICB2_TEST_CTL_1 NOISE_FILT_RES_VAL */
+	{ .addr = 0x4018006F, .val = 0x01 }, /* MICB2_TEST_CTL_2 IBIAS_LDO_DRIVER */
+	{ .addr = 0x40180071, .val = 0xFA }, /* MICB3_TEST_CTL_1 NOISE_FILT_RES_VAL */
 	{ .addr = 0x40180072, .val = 0x81 }, /* MICB3_TEST_CTL_2 IBIAS_LDO_DRIVER */
 	{ .addr = 0x401800CE, .val = 0x38 }, /* HPH_OCP_CTL OCP_FSM_EN */
 	{ .addr = 0x401800CE, .val = 0x3A }, /* HPH_OCP_CTL SCD_OP_EN */
@@ -785,12 +809,98 @@ static struct sdca_function_data wcd9378_sdca_data = {
 #define WCD9378_ANA_MBHC_MECH_DET_TYP		0x20
 #define WCD9378_ANA_MBHC_ELECT_ADDR		0x40180015
 #define WCD9378_ANA_MBHC_ELECT_BIAS_EN		0x01
+#define WCD9378_ANA_MBHC_ELECT_SCHMT_ISRC	0x06
+#define WCD9378_ANA_MBHC_ELECT_FSM_EN		0x80
 #define WCD9378_MBHC_NEW_INT_MECH_DET_CURRENT_ADDR	0x401801b1
 #define WCD9378_MBHC_HSDET_PULLUP_CTL_2P0_UA		0x08
 #define WCD9378_MBHC_NEW_PLUG_DETECT_CTL_ADDR		0x40180122
 #define WCD9378_MBHC_INSREM_DBNC_96MS			0x06
+/*
+ * MBHC_NEW_CTL_1, reset 0x0e.  Do not copy the ADC and detection fields from
+ * wcd937x.c's wcd_mbhc_fields[], which places ADC enable at 0x08 and
+ * detection-done at 0x04 and sizes BTN_DBNC_CTL as 0x03 -- that is a
+ * different die.  Here BTN_DBNC_CTL is bits 3:0, so the wcd937x ADC-enable
+ * mask lands inside the button debounce field and leaves the ADC alone.  The
+ * debounce encoding differs with the width: 0x0 is 0.9ms rising to 0xf at
+ * 36.3ms, reset 0xe being 18.5ms, so the reference driver's "set 2 for 16ms"
+ * does not carry over either.  The rest of the MBHC masks do agree between
+ * the two parts.
+ */
 #define WCD9378_MBHC_NEW_CTL_1_ADDR		0x40180120
 #define WCD9378_MBHC_NEW_CTL_1_RCO_EN		0x80
+#define WCD9378_MBHC_NEW_CTL_1_ADC_EN		0x40
+/*
+ * Gates the button press/release interrupts.  Software latches it once it has
+ * concluded the plug carries a mic; this driver does not do buttons and so
+ * leaves it at its reset 0.
+ */
+#define WCD9378_MBHC_NEW_CTL_1_DETECTION_DONE	0x20
+/* 0 = single measurement, 1 = continuous; this driver uses continuous */
+#define WCD9378_MBHC_NEW_CTL_1_ADC_MODE		0x10
+/* Everything above BTN_DBNC_CTL, which is left as the hardware set it */
+#define WCD9378_MBHC_NEW_CTL_1_DET_MASK		0xf0
+#define WCD9378_MBHC_NEW_CTL_2_ADDR		0x40180121
+#define WCD9378_MBHC_NEW_CTL_2_MUX_CTL		0x70
+/* MUX_CTL field values in place, see enum wcd_mbhc_adc_mux_ctl */
+#define WCD9378_MBHC_NEW_CTL_2_MUX_CTL_IN2P	0x10
+#define WCD9378_MBHC_NEW_CTL_2_MUX_CTL_HPH_L	0x40
+#define WCD9378_MBHC_NEW_CTL_2_MUX_CTL_HPH_R	0x50
+/*
+ * The rest of FSM_STATUS, for reading the value this driver traces: 0x20
+ * mechanical comparator (plug present, not moisture), 0x10 fast press, 0x08
+ * fast removal, 0x04 removal, 0x02 electrical-removal comparator (set while
+ * the mic line is pulled up), 0x01 button.
+ */
+#define WCD9378_MBHC_NEW_FSM_STATUS_ADDR	0x40180125
+#define WCD9378_MBHC_NEW_FSM_STATUS_ADC_COMPLETE	0x40
+#define WCD9378_MBHC_NEW_FSM_STATUS_ADC_TIMEOUT		0x80
+#define WCD9378_MBHC_NEW_ADC_RESULT_ADDR	0x40180126
+#define WCD9378_ANA_HPH_ADDR			0x40180009
+#define WCD9378_ANA_HPH_PA_EN			0xC0
+#define WCD9378_ANA_MICB2_ADDR			0x40180023
+#define WCD9378_ANA_MICB2_CTRL			0xC0
+#define WCD9378_ANA_MICB2_CTRL_ENABLE		0x40
+#define WCD9378_ANA_MICB2_VOUT			0x3F
+#define WCD9378_DIGITAL_CDC_ANA_CLK_CTL_ADDR	0x40180408
+#define WCD9378_DIGITAL_CDC_ANA_CLK_CTL_ANA_TX	0x10
+#define WCD9378_DIGITAL_CDC_DIG_CLK_CTL_ADDR	0x40180409
+#define WCD9378_DIGITAL_CDC_DIG_CLK_CTL_TX_CLK	0xF0
+
+/*
+ * Mic-line thresholds for ADC accessory classification, as
+ * wcd-mbhc-v2.c's compiled-in defaults.  No MBHC device-tree
+ * properties are described for this part, so there is nothing to
+ * override them with.
+ */
+#define WCD9378_MBHC_ADC_MICBIAS_MV		1800
+#define WCD9378_MBHC_ADC_HPH_THRESHOLD_MV	75
+#define WCD9378_MBHC_ADC_HS_THRESHOLD_MV	1700
+
+/*
+ * wcd_check_cross_conn()'s HPHL_CROSS_CONN_THRESHOLD: a headphone pin
+ * reading above this is carrying the mic bias, so ground and mic are
+ * swapped in the plug.  Diagnostic only here, see
+ * wcd9378_mbhc_trace_cross_conn().
+ */
+#define WCD9378_MBHC_ADC_CROSS_CONN_MV		100
+
+/*
+ * 3ms waits for the continuous-mode ADC to self-calibrate.  The reference
+ * driver takes three and moves on, but it can afford to: wcd_correct_swch_plug()
+ * re-measures for up to ~1.8s and only accepts a plug type that repeats.  This
+ * driver classifies from one cold measurement, so take a couple more.
+ *
+ * Measured on Glymur CRD with the 50ms mic-bias settle below: a headset mic
+ * line reads 1450mV on the first sample and is flat at 1475mV from the fourth
+ * onwards, so five is the plateau plus margin.  A headphone reads 0mV from the
+ * first sample, having nothing to charge.
+ */
+#define WCD9378_MBHC_ADC_SETTLE_COUNT		5
+
+/* GE 35 Selected_Mode values, see range_ge35_mode_data[]. */
+#define WCD9378_GE35_MODE_UNPLUGGED		0x0
+#define WCD9378_GE35_MODE_HEADSET		0x3
+#define WCD9378_GE35_MODE_HEADPHONE		0x4
 
 /* Slave ports 1..8, mapped to master ports via qcom,port-mapping. */
 #define WCD9378_SDCA_MAX_PORTS			8
@@ -937,6 +1047,7 @@ static int wcd9378_sdca_populate_function(struct sdw_slave *slave,
 static int wcd9378_sdca_set_jack(struct sdw_slave *slave, struct regmap *dev_regmap)
 {
 	struct device *dev = &slave->dev;
+	unsigned int val;
 	int ret;
 
 	ret = pm_runtime_resume_and_get(dev);
@@ -973,10 +1084,26 @@ static int wcd9378_sdca_set_jack(struct sdw_slave *slave, struct regmap *dev_reg
 		goto out;
 	}
 
-	ret = regmap_write(dev_regmap, WCD9378_MBHC_NEW_CTL_1_ADDR,
-			   WCD9378_MBHC_NEW_CTL_1_RCO_EN);
-	if (ret)
+	/*
+	 * RCO on, ADC and detection idle.  Masked rather than written whole so
+	 * BTN_DBNC_CTL in the low nibble keeps its reset value.
+	 */
+	ret = regmap_update_bits(dev_regmap, WCD9378_MBHC_NEW_CTL_1_ADDR,
+				 WCD9378_MBHC_NEW_CTL_1_DET_MASK,
+				 WCD9378_MBHC_NEW_CTL_1_RCO_EN);
+	if (ret) {
 		dev_err(dev, "MBHC_NEW_CTL_1: %d\n", ret);
+		goto out;
+	}
+
+	ret = regmap_read(dev_regmap, WCD9378_ANA_MBHC_MECH_ADDR, &val);
+	if (ret) {
+		dev_err(dev, "ANA_MBHC_MECH readback: %d\n", ret);
+		goto out;
+	}
+
+	dev_err(dev, "mbhc: jack detect armed for %s, ANA_MBHC_MECH %#x\n",
+		val & WCD9378_ANA_MBHC_MECH_DET_TYP ? "insertion" : "removal", val);
 
 out:
 	pm_runtime_mark_last_busy(dev);
@@ -986,17 +1113,381 @@ out:
 }
 
 /*
+ * Bring up MBHC mic bias, following wcd937x_micbias_control()'s MICB_ENABLE
+ * case: the TX clocks have to be running before MICB2 itself, or the ADC
+ * samples an unsettled line.  That reference also sets MICBn_TEST_CTL_2
+ * IBIAS_LDO_DRIVER here; wcd9378_sdca_init_table[] already establishes those
+ * at function boot, so there is nothing left to do for them.
+ *
+ * This reaches around the SDCA mic-bias model (IT 33 MICB and its PDE), which
+ * is safe only because classification runs on jack insertion, when no capture
+ * stream can be open.  ANA_MICB2 is restored by the caller; the TX clock
+ * enables are left on, matching the reference driver.
+ */
+static int wcd9378_mbhc_micbias_enable(struct device *dev, struct regmap *dev_regmap)
+{
+	unsigned int val;
+	int ret;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_DIGITAL_CDC_DIG_CLK_CTL_ADDR,
+				 WCD9378_DIGITAL_CDC_DIG_CLK_CTL_TX_CLK,
+				 WCD9378_DIGITAL_CDC_DIG_CLK_CTL_TX_CLK);
+	if (ret)
+		return ret;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_DIGITAL_CDC_ANA_CLK_CTL_ADDR,
+				 WCD9378_DIGITAL_CDC_ANA_CLK_CTL_ANA_TX,
+				 WCD9378_DIGITAL_CDC_ANA_CLK_CTL_ANA_TX);
+	if (ret)
+		return ret;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MICB2_ADDR,
+				 WCD9378_ANA_MICB2_CTRL,
+				 WCD9378_ANA_MICB2_CTRL_ENABLE);
+	if (ret)
+		return ret;
+
+	/*
+	 * Let the bias reach the mic line before measuring.  The reference
+	 * driver gets this for free from the worker hop plus its cross-connect
+	 * checks and its repeated measurements; with only one measurement to
+	 * work from, match the flat 50ms the Windows driver sleeps here.
+	 *
+	 * This wait, not the ADC settle loop, is what decides whether the
+	 * reading has converged: at 10ms a headset mic line was still climbing
+	 * through 1412mV towards the 1700mV ceiling, and at 50ms it arrives at
+	 * 1450mV on the first sample and plateaus at 1475mV.
+	 */
+	usleep_range(50000, 51000);
+
+	ret = regmap_read(dev_regmap, WCD9378_ANA_MICB2_ADDR, &val);
+	if (ret)
+		return ret;
+
+	dev_dbg(dev, "mbhc: mic bias up, ANA_MICB2 %#x\n", val);
+
+	return 0;
+}
+
+/* ADC_RESULT is 12.5mV per step, referred to the mic bias it was taken at */
+static int wcd9378_mbhc_adc_to_mv(unsigned int adc, int micbias_mv)
+{
+	return ((int)adc * 125 * micbias_mv) /
+	       (WCD9378_MBHC_ADC_MICBIAS_MV * 10);
+}
+
+/*
+ * Measure one MBHC mux input with the ADC in continuous mode, the same way
+ * wcd_measure_adc_continuous() does for the first measurement of a fresh
+ * insertion.  Continuous mode needs no completion poll, just three 3ms waits
+ * for the ADC to self-calibrate; single-shot mode is only worth its FSM
+ * bookkeeping for the repeated measurements of the button/removal loop, which
+ * this driver does not run.  FSM_STATUS is read anyway and traced, since
+ * ADC_TIMEOUT there explains an implausible result.
+ *
+ * The whole detection state (ANA_MBHC_ELECT, MBHC_NEW_CTL_1, MBHC_NEW_CTL_2)
+ * is saved and put back, so what wcd9378_sdca_set_jack() established for
+ * mechanical detection survives the measurement.
+ *
+ * Return: measured millivolts, or a negative error code.
+ */
+static int wcd9378_mbhc_measure_adc(struct device *dev, struct regmap *dev_regmap,
+				    unsigned int mux_ctl, const char *mux_name,
+				    int micbias_mv)
+{
+	unsigned int elect, ctl_1, ctl_2, status, adc = 0;
+	int output_mv = 0;
+	int prev_mv = 0;
+	int err_restore;
+	int i, ret;
+
+	ret = regmap_read(dev_regmap, WCD9378_ANA_MBHC_ELECT_ADDR, &elect);
+	if (ret)
+		goto err;
+
+	ret = regmap_read(dev_regmap, WCD9378_MBHC_NEW_CTL_1_ADDR, &ctl_1);
+	if (ret)
+		goto err;
+
+	ret = regmap_read(dev_regmap, WCD9378_MBHC_NEW_CTL_2_ADDR, &ctl_2);
+	if (ret)
+		goto err;
+
+	/* The state the restore path below has to put back, for debugging it */
+	dev_dbg(dev, "mbhc: %s measure start: elect %#x ctl_1 %#x ctl_2 %#x\n",
+		mux_name, elect, ctl_1, ctl_2);
+
+	/* Legacy electrical detection would fight the ADC for the mic line */
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MBHC_ELECT_ADDR,
+				 WCD9378_ANA_MBHC_ELECT_SCHMT_ISRC, 0);
+	if (ret)
+		goto restore;
+
+	/* Continuous mode, but hold the ADC and the FSM off while the mux moves */
+	ret = regmap_update_bits(dev_regmap, WCD9378_MBHC_NEW_CTL_1_ADDR,
+				 WCD9378_MBHC_NEW_CTL_1_ADC_MODE |
+				 WCD9378_MBHC_NEW_CTL_1_ADC_EN,
+				 WCD9378_MBHC_NEW_CTL_1_ADC_MODE);
+	if (ret)
+		goto restore;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MBHC_ELECT_ADDR,
+				 WCD9378_ANA_MBHC_ELECT_FSM_EN, 0);
+	if (ret)
+		goto restore;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_MBHC_NEW_CTL_2_ADDR,
+				 WCD9378_MBHC_NEW_CTL_2_MUX_CTL, mux_ctl);
+	if (ret)
+		goto restore;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MBHC_ELECT_ADDR,
+				 WCD9378_ANA_MBHC_ELECT_FSM_EN,
+				 WCD9378_ANA_MBHC_ELECT_FSM_EN);
+	if (ret)
+		goto restore;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_MBHC_NEW_CTL_1_ADDR,
+				 WCD9378_MBHC_NEW_CTL_1_ADC_EN,
+				 WCD9378_MBHC_NEW_CTL_1_ADC_EN);
+	if (ret)
+		goto restore;
+
+	for (i = 0; i < WCD9378_MBHC_ADC_SETTLE_COUNT; i++) {
+		usleep_range(3000, 3100);
+
+		ret = regmap_read(dev_regmap, WCD9378_MBHC_NEW_ADC_RESULT_ADDR, &adc);
+		if (ret)
+			goto restore;
+
+		output_mv = wcd9378_mbhc_adc_to_mv(adc, micbias_mv);
+
+		/*
+		 * Per-sample trace, the one line here that is not needed to
+		 * explain a classification after the fact.  Enable with:
+		 *   echo 'format "mbhc: %s settle" +p' > \
+		 *	/sys/kernel/debug/dynamic_debug/control
+		 */
+		if (i)
+			dev_dbg(dev, "mbhc: %s settle %d/%d: adc %#x -> %dmV (%+dmV)\n",
+				mux_name, i + 1, WCD9378_MBHC_ADC_SETTLE_COUNT,
+				adc, output_mv, output_mv - prev_mv);
+		else
+			dev_dbg(dev, "mbhc: %s settle %d/%d: adc %#x -> %dmV\n",
+				mux_name, i + 1, WCD9378_MBHC_ADC_SETTLE_COUNT,
+				adc, output_mv);
+
+		prev_mv = output_mv;
+	}
+
+	ret = regmap_read(dev_regmap, WCD9378_MBHC_NEW_FSM_STATUS_ADDR, &status);
+	if (ret)
+		goto restore;
+
+	dev_err(dev, "mbhc: %s measured %dmV (adc %#x, fsm_status %#x%s%s)\n",
+		mux_name, output_mv, adc, status,
+		status & WCD9378_MBHC_NEW_FSM_STATUS_ADC_COMPLETE ? " complete" : "",
+		status & WCD9378_MBHC_NEW_FSM_STATUS_ADC_TIMEOUT ? " TIMEOUT" : "");
+
+	ret = output_mv;
+
+restore:
+	/*
+	 * Park the mux with the FSM quiet, then undo the rest in the order
+	 * wcd_check_cross_conn() does: mux, then ADC, then the FSM and legacy
+	 * detection state together with the ELECT register.  Restoring
+	 * MBHC_NEW_CTL_2 wholesale is what returns MUX_CTL to AUTO, since that
+	 * is the field's reset value and nothing else writes it.
+	 *
+	 * Every write is attempted even if an earlier one failed: leaving the
+	 * detection block half configured would cost the next transition.
+	 */
+	err_restore = regmap_update_bits(dev_regmap, WCD9378_ANA_MBHC_ELECT_ADDR,
+					 WCD9378_ANA_MBHC_ELECT_FSM_EN, 0);
+	err_restore |= regmap_write(dev_regmap, WCD9378_MBHC_NEW_CTL_2_ADDR, ctl_2);
+	err_restore |= regmap_write(dev_regmap, WCD9378_MBHC_NEW_CTL_1_ADDR, ctl_1);
+	err_restore |= regmap_write(dev_regmap, WCD9378_ANA_MBHC_ELECT_ADDR, elect);
+	if (err_restore)
+		dev_err(dev, "mbhc: %s failed to restore detection state\n", mux_name);
+
+	return ret;
+
+err:
+	dev_err(dev, "mbhc: %s failed to read detection state: %d\n", mux_name, ret);
+
+	return ret;
+}
+
+/*
+ * Trace whether the plug went in cross-connected, i.e. with ground and mic
+ * swapped, which puts the mic bias on a headphone pin and makes the IN2P
+ * reading meaningless.  wcd_check_cross_conn() calls anything above 100mV on
+ * either headphone pin a cross-connection.
+ *
+ * This is diagnostics only and deliberately changes no decision: correcting a
+ * cross-connection needs a board-level ground/mic swap callback that does not
+ * exist for this part.  It does say whether a misclassification is the plug's
+ * fault or the driver's.  Costs two more ADC measurements, so this is the
+ * first thing to drop if the handler ever needs to be shorter.
+ */
+static void wcd9378_mbhc_trace_cross_conn(struct device *dev, struct regmap *dev_regmap,
+					  int micbias_mv)
+{
+	int hphl_mv, hphr_mv;
+	unsigned int hph;
+	int ret;
+
+	/* A running headphone PA would drive the pins the ADC wants to read */
+	ret = regmap_read(dev_regmap, WCD9378_ANA_HPH_ADDR, &hph);
+	if (ret) {
+		dev_err(dev, "mbhc: ANA_HPH read: %d\n", ret);
+		return;
+	}
+
+	if (hph & WCD9378_ANA_HPH_PA_EN) {
+		dev_err(dev, "mbhc: hph pa on (ANA_HPH %#x), skipping cross-conn trace\n",
+			hph);
+		return;
+	}
+
+	hphl_mv = wcd9378_mbhc_measure_adc(dev, dev_regmap,
+					   WCD9378_MBHC_NEW_CTL_2_MUX_CTL_HPH_L,
+					   "hphl", micbias_mv);
+	if (hphl_mv < 0) {
+		dev_err(dev, "mbhc: hphl measurement: %d\n", hphl_mv);
+		return;
+	}
+
+	hphr_mv = wcd9378_mbhc_measure_adc(dev, dev_regmap,
+					   WCD9378_MBHC_NEW_CTL_2_MUX_CTL_HPH_R,
+					   "hphr", micbias_mv);
+	if (hphr_mv < 0) {
+		dev_err(dev, "mbhc: hphr measurement: %d\n", hphr_mv);
+		return;
+	}
+
+	if (hphl_mv > WCD9378_MBHC_ADC_CROSS_CONN_MV ||
+	    hphr_mv > WCD9378_MBHC_ADC_CROSS_CONN_MV)
+		dev_warn(dev, "mbhc: plug looks cross-connected: hphl %dmV hphr %dmV, over %dmV\n",
+			 hphl_mv, hphr_mv, WCD9378_MBHC_ADC_CROSS_CONN_MV);
+	else
+		dev_err(dev, "mbhc: no cross-connection: hphl %dmV hphr %dmV, under %dmV\n",
+			hphl_mv, hphr_mv, WCD9378_MBHC_ADC_CROSS_CONN_MV);
+}
+
+/*
+ * Classify the accessory from the mic-line voltage and return the GE 35
+ * Selected_Mode that describes it, following wcd_mbhc_get_plug_from_adc().
+ * A line that reads above the headset threshold is a high-impedance plug or
+ * an extension cable; report it as a headphone, which is what the reference
+ * driver settles on when its special-headset re-measure finds nothing.
+ */
+static unsigned int wcd9378_mbhc_mode_from_mv(struct device *dev, int output_mv,
+					      int micbias_mv)
+{
+	unsigned int mode;
+	const char *reason;
+	int hph_thr, hs_thr;
+
+	hph_thr = (WCD9378_MBHC_ADC_HPH_THRESHOLD_MV * micbias_mv) /
+		  WCD9378_MBHC_ADC_MICBIAS_MV;
+	hs_thr = (WCD9378_MBHC_ADC_HS_THRESHOLD_MV * micbias_mv) /
+		 WCD9378_MBHC_ADC_MICBIAS_MV;
+
+	if (output_mv < hph_thr) {
+		mode = WCD9378_GE35_MODE_HEADPHONE;
+		reason = "headphone, mic line sits at ground";
+	} else if (output_mv > hs_thr) {
+		mode = WCD9378_GE35_MODE_HEADPHONE;
+		reason = "headphone, mic line above band (high-Z plug or extension cable)";
+	} else {
+		mode = WCD9378_GE35_MODE_HEADSET;
+		reason = "headset";
+	}
+
+	dev_err(dev, "mbhc: mic line %dmV vs headset band %d-%dmV (micbias %dmV) -> mode %u, %s\n",
+		output_mv, hph_thr, hs_thr, micbias_mv, mode, reason);
+
+	return mode;
+}
+
+/*
+ * Measure the mic line and work out what kind of accessory is on the jack.
+ * Errors are reported and swallowed: the caller keeps the hardware's mode,
+ * which is the permissive "headset" guess, so a failed measurement costs
+ * classification but never the mic path.
+ */
+static void wcd9378_mbhc_classify(struct device *dev, struct regmap *dev_regmap,
+				  unsigned int *selected_mode)
+{
+	unsigned int micb2;
+	int micbias_mv, output_mv;
+	int ret;
+
+	ret = regmap_read(dev_regmap, WCD9378_ANA_MICB2_ADDR, &micb2);
+	if (ret) {
+		dev_err(dev, "mbhc: ANA_MICB2 read: %d\n", ret);
+		return;
+	}
+
+	/* micbias = 1.0V + VOUT_CTL * 50mV */
+	micbias_mv = 1000 + (micb2 & WCD9378_ANA_MICB2_VOUT) * 50;
+
+	/* micbias_mv is repeated in the decision line, this is the raw source */
+	dev_dbg(dev, "mbhc: classify start: ANA_MICB2 %#x -> micbias %dmV\n",
+		micb2, micbias_mv);
+
+	ret = wcd9378_mbhc_micbias_enable(dev, dev_regmap);
+	if (ret) {
+		dev_err(dev, "mbhc: mic bias enable: %d\n", ret);
+		goto restore;
+	}
+
+	output_mv = wcd9378_mbhc_measure_adc(dev, dev_regmap,
+					     WCD9378_MBHC_NEW_CTL_2_MUX_CTL_IN2P,
+					     "in2p", micbias_mv);
+	if (output_mv < 0) {
+		dev_err(dev, "mbhc: in2p measurement: %d\n", output_mv);
+		goto restore;
+	}
+
+	*selected_mode = wcd9378_mbhc_mode_from_mv(dev, output_mv, micbias_mv);
+
+	wcd9378_mbhc_trace_cross_conn(dev, dev_regmap, micbias_mv);
+
+restore:
+	/* Hand mic bias back to the SDCA model (IT 33 MICB and its PDE). */
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MICB2_ADDR,
+				 WCD9378_ANA_MICB2_CTRL,
+				 micb2 & WCD9378_ANA_MICB2_CTRL);
+	if (ret)
+		dev_err(dev, "mbhc: ANA_MICB2 restore: %d\n", ret);
+}
+
+/*
+ * Re-arm mechanical detection and classify the accessory.
+ *
  * MECH_DET_TYP selects which transition direction (insert/remove) the
  * mechanical comparator is armed for; toggle it after every GE 35
  * DETECTED_MODE interrupt so the opposite-direction transition is still
  * seen next time.
+ *
+ * The part has no accessory detection of its own, so on insertion also
+ * measure the mic line and override the mode the caller applies to
+ * GE 35 Selected_Mode.  Only a failed re-arm is reported as an error,
+ * since that is what would cost the next transition entirely.
  */
 static int wcd9378_sdca_post_jack_irq_process(struct sdw_slave *slave,
-					       struct regmap *dev_regmap)
+					       struct regmap *dev_regmap,
+					       unsigned int detected_mode,
+					       unsigned int *selected_mode)
 {
 	struct device *dev = &slave->dev;
 	unsigned int val;
 	int ret;
+
+	dev_err(dev, "mbhc: ge mode detected %u, selected %u\n",
+		detected_mode, *selected_mode);
 
 	ret = pm_runtime_resume_and_get(dev);
 	if (ret < 0) {
@@ -1013,8 +1504,29 @@ static int wcd9378_sdca_post_jack_irq_process(struct sdw_slave *slave,
 	val ^= WCD9378_ANA_MBHC_MECH_DET_TYP;
 
 	ret = regmap_write(dev_regmap, WCD9378_ANA_MBHC_MECH_ADDR, val);
-	if (ret)
+	if (ret) {
 		dev_err(dev, "ANA_MBHC_MECH write for rearm: %d\n", ret);
+		goto out;
+	}
+
+	dev_err(dev, "mbhc: rearmed for %s, ANA_MBHC_MECH %#x\n",
+		val & WCD9378_ANA_MBHC_MECH_DET_TYP ? "insertion" : "removal", val);
+
+	/*
+	 * On removal the hardware returns Selected_Mode to Safe_Mode itself and
+	 * software must leave it alone, so there is nothing to classify.
+	 *
+	 * Otherwise: MBHC_CTRL DEVICE_DET ACCESSORY_TYPE is left at its reset
+	 * value 3, so the hardware calls every insertion a headset regardless
+	 * of what was plugged in.  Measure the mic line and correct it.
+	 */
+	if (detected_mode != WCD9378_GE35_MODE_UNPLUGGED)
+		wcd9378_mbhc_classify(dev, dev_regmap, selected_mode);
+	else
+		dev_err(dev, "mbhc: unplugged, no classification\n");
+
+	dev_err(dev, "mbhc: ge mode detected %u done, selected %u\n",
+		detected_mode, *selected_mode);
 
 out:
 	pm_runtime_mark_last_busy(dev);
