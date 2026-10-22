@@ -28,6 +28,13 @@
 
 struct wcd9378_priv {
 	struct sdca_class_drv class;
+	/*
+	 * MBHC mic bias left raised at 2.7V for a special headset, and the
+	 * VOUT_CTL it was raised from, so removal can put it back without
+	 * assuming a reset value.  See wcd9378_mbhc_check_spl_headset().
+	 */
+	unsigned int micb2_vout_saved;
+	bool spl_headset;
 };
 
 static struct sdca_entity wcd9378_sdca_entities[];
@@ -860,6 +867,12 @@ static struct sdca_function_data wcd9378_sdca_data = {
 #define WCD9378_ANA_MICB2_ADDR			0x40180023
 #define WCD9378_ANA_MICB2_CTRL			0xC0
 #define WCD9378_ANA_MICB2_CTRL_ENABLE		0x40
+/*
+ * CTRL is bits 7:6 with the same field values as wcd937x.h's WCD937X_MICB_*:
+ * 0 disable, 1 enable, 2 pull-up, 3 pull-down.  Pull-up is only used as a
+ * stopover while VOUT_CTL changes, see wcd9378_mbhc_micb2_set_vout().
+ */
+#define WCD9378_ANA_MICB2_CTRL_PULL_UP		0x80
 #define WCD9378_ANA_MICB2_VOUT			0x3F
 #define WCD9378_DIGITAL_CDC_ANA_CLK_CTL_ADDR	0x40180408
 #define WCD9378_DIGITAL_CDC_ANA_CLK_CTL_ANA_TX	0x10
@@ -875,6 +888,19 @@ static struct sdca_function_data wcd9378_sdca_data = {
 #define WCD9378_MBHC_ADC_MICBIAS_MV		1800
 #define WCD9378_MBHC_ADC_HPH_THRESHOLD_MV	75
 #define WCD9378_MBHC_ADC_HS_THRESHOLD_MV	1700
+
+/*
+ * wcd-mbhc-v2.h's WCD_MBHC_THR_HS_MICB_MV.  Some headsets, Apple's among them,
+ * put a chip in series with the microphone that leaves it disconnected until
+ * the bias reaches about 2.7V; at 1.8V their mic line floats and reads above
+ * the headset band.  Re-measuring at this bias is what tells them apart from a
+ * genuine extension cable, see wcd9378_mbhc_check_spl_headset().
+ *
+ * VOUT_CTL = (micbias_mv - 1000) / 50, and wcd-common.c's
+ * wcd_get_micb_vout_ctl_val() caps the family at 2.85V, so 2.7V is in range.
+ */
+#define WCD9378_MBHC_SPL_HS_MICBIAS_MV		2700
+#define WCD9378_ANA_MICB2_VOUT_2P7V		0x22
 
 /*
  * wcd_check_cross_conn()'s HPHL_CROSS_CONN_THRESHOLD: a headphone pin
@@ -1378,12 +1404,16 @@ static void wcd9378_mbhc_trace_cross_conn(struct device *dev, struct regmap *dev
 /*
  * Classify the accessory from the mic-line voltage and return the GE 35
  * Selected_Mode that describes it, following wcd_mbhc_get_plug_from_adc().
- * A line that reads above the headset threshold is a high-impedance plug or
- * an extension cable; report it as a headphone, which is what the reference
- * driver settles on when its special-headset re-measure finds nothing.
+ *
+ * A line that reads above the headset threshold is either a special headset
+ * whose mic is still disconnected at this bias or a high-impedance plug or
+ * extension cable; @above_band reports that case so the caller can raise the
+ * bias and ask again.  The mode returned for it is headphone, which is what
+ * both references settle on when the re-measure finds nothing.  Pass NULL for
+ * @above_band when there is no second chance left to take.
  */
 static unsigned int wcd9378_mbhc_mode_from_mv(struct device *dev, int output_mv,
-					      int micbias_mv)
+					      int micbias_mv, bool *above_band)
 {
 	unsigned int mode;
 	const char *reason;
@@ -1394,12 +1424,17 @@ static unsigned int wcd9378_mbhc_mode_from_mv(struct device *dev, int output_mv,
 	hs_thr = (WCD9378_MBHC_ADC_HS_THRESHOLD_MV * micbias_mv) /
 		 WCD9378_MBHC_ADC_MICBIAS_MV;
 
+	if (above_band)
+		*above_band = false;
+
 	if (output_mv < hph_thr) {
 		mode = WCD9378_GE35_MODE_HEADPHONE;
 		reason = "headphone, mic line sits at ground";
 	} else if (output_mv > hs_thr) {
 		mode = WCD9378_GE35_MODE_HEADPHONE;
 		reason = "headphone, mic line above band (high-Z plug or extension cable)";
+		if (above_band)
+			*above_band = true;
 	} else {
 		mode = WCD9378_GE35_MODE_HEADSET;
 		reason = "headset";
@@ -1407,6 +1442,114 @@ static unsigned int wcd9378_mbhc_mode_from_mv(struct device *dev, int output_mv,
 
 	dev_err(dev, "mbhc: mic line %dmV vs headset band %d-%dmV (micbias %dmV) -> mode %u, %s\n",
 		output_mv, hph_thr, hs_thr, micbias_mv, mode, reason);
+
+	return mode;
+}
+
+/*
+ * Move MICB2 to a new VOUT_CTL while the bias is live, as
+ * wcd937x_mbhc_micb_adjust_voltage() does: drop CTRL to pull-up for the
+ * change, then return it to enable.  Writing VOUT_CTL with the bias enabled
+ * leaves the line ramping slowly to the new level instead.
+ */
+static int wcd9378_mbhc_micb2_set_vout(struct regmap *dev_regmap, unsigned int vout)
+{
+	int ret;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MICB2_ADDR,
+				 WCD9378_ANA_MICB2_CTRL,
+				 WCD9378_ANA_MICB2_CTRL_PULL_UP);
+	if (ret)
+		return ret;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MICB2_ADDR,
+				 WCD9378_ANA_MICB2_VOUT, vout);
+	if (ret)
+		return ret;
+
+	return regmap_update_bits(dev_regmap, WCD9378_ANA_MICB2_ADDR,
+				  WCD9378_ANA_MICB2_CTRL,
+				  WCD9378_ANA_MICB2_CTRL_ENABLE);
+}
+
+/*
+ * Second stage of classification, for a mic line that read above the headset
+ * band at the nominal bias.  Raise MICB2 to 2.7V and measure again: a special
+ * headset's series chip connects its microphone there and the reading drops
+ * into the band, while an extension cable just follows the bias up and stays
+ * above it.  Follows wcd_mbhc_check_for_spl_headset().
+ *
+ * On a match the bias is deliberately left at 2.7V -- dropping it back would
+ * disconnect the microphone just found -- and @micbias_mv is updated so the
+ * caller's later conversions are referred to the bias actually applied.  The
+ * raised bias is given up again on removal, see
+ * wcd9378_mbhc_spl_headset_release().
+ *
+ * Returns the GE 35 Selected_Mode; any failure returns headphone, which is the
+ * mode the first measurement had already settled on.
+ */
+static unsigned int wcd9378_mbhc_check_spl_headset(struct device *dev,
+						   struct regmap *dev_regmap,
+						   unsigned int micb2,
+						   int *micbias_mv)
+{
+	struct wcd9378_priv *priv = dev_get_drvdata(dev);
+	unsigned int mode = WCD9378_GE35_MODE_HEADPHONE;
+	int output_mv;
+	int ret;
+
+	ret = wcd9378_mbhc_micb2_set_vout(dev_regmap,
+					  WCD9378_ANA_MICB2_VOUT_2P7V);
+	if (ret) {
+		dev_err(dev, "mbhc: mic bias raise to %dmV: %d\n",
+			WCD9378_MBHC_SPL_HS_MICBIAS_MV, ret);
+		goto restore;
+	}
+
+	/*
+	 * The reference driver waits 10ms here and the Windows driver 30ms,
+	 * noting a waveform capture that takes 30-40ms to stabilise.  Use the
+	 * same 50ms as wcd9378_mbhc_micbias_enable(), which is the only settle
+	 * time measured on this board -- at 10ms a mic line was still climbing
+	 * -- and which subsumes the 2ms the reference requires after MICB2 is
+	 * re-enabled.
+	 */
+	usleep_range(50000, 51000);
+
+	output_mv = wcd9378_mbhc_measure_adc(dev, dev_regmap,
+					     WCD9378_MBHC_NEW_CTL_2_MUX_CTL_IN2P,
+					     "in2p@2.7v",
+					     WCD9378_MBHC_SPL_HS_MICBIAS_MV);
+	if (output_mv < 0) {
+		dev_err(dev, "mbhc: in2p measurement at %dmV: %d\n",
+			WCD9378_MBHC_SPL_HS_MICBIAS_MV, output_mv);
+		goto restore;
+	}
+
+	mode = wcd9378_mbhc_mode_from_mv(dev, output_mv,
+					 WCD9378_MBHC_SPL_HS_MICBIAS_MV, NULL);
+	if (mode == WCD9378_GE35_MODE_HEADSET) {
+		priv->micb2_vout_saved = micb2 & WCD9378_ANA_MICB2_VOUT;
+		priv->spl_headset = true;
+		*micbias_mv = WCD9378_MBHC_SPL_HS_MICBIAS_MV;
+
+		dev_err(dev, "mbhc: special headset, holding mic bias at %dmV\n",
+			WCD9378_MBHC_SPL_HS_MICBIAS_MV);
+
+		return mode;
+	}
+
+	dev_err(dev, "mbhc: not a special headset, mic line follows the bias\n");
+
+restore:
+	ret = wcd9378_mbhc_micb2_set_vout(dev_regmap,
+					  micb2 & WCD9378_ANA_MICB2_VOUT);
+	if (ret) {
+		dev_err(dev, "mbhc: mic bias restore: %d\n", ret);
+	} else {
+		/* The reference's settle after dropping the bias back */
+		usleep_range(10000, 10100);
+	}
 
 	return mode;
 }
@@ -1422,6 +1565,7 @@ static void wcd9378_mbhc_classify(struct device *dev, struct regmap *dev_regmap,
 {
 	unsigned int micb2;
 	int micbias_mv, output_mv;
+	bool above_band;
 	int ret;
 
 	ret = regmap_read(dev_regmap, WCD9378_ANA_MICB2_ADDR, &micb2);
@@ -1451,7 +1595,18 @@ static void wcd9378_mbhc_classify(struct device *dev, struct regmap *dev_regmap,
 		goto restore;
 	}
 
-	*selected_mode = wcd9378_mbhc_mode_from_mv(dev, output_mv, micbias_mv);
+	*selected_mode = wcd9378_mbhc_mode_from_mv(dev, output_mv, micbias_mv,
+						   &above_band);
+
+	/*
+	 * Above the band the mic line could still belong to a headset whose
+	 * microphone needs a higher bias to connect at all; raise it and ask
+	 * again before settling for headphone.
+	 */
+	if (above_band)
+		*selected_mode = wcd9378_mbhc_check_spl_headset(dev, dev_regmap,
+								micb2,
+								&micbias_mv);
 
 	wcd9378_mbhc_trace_cross_conn(dev, dev_regmap, micbias_mv);
 
@@ -1462,6 +1617,41 @@ restore:
 				 micb2 & WCD9378_ANA_MICB2_CTRL);
 	if (ret)
 		dev_err(dev, "mbhc: ANA_MICB2 restore: %d\n", ret);
+}
+
+/*
+ * Give up a mic bias that wcd9378_mbhc_check_spl_headset() left raised.
+ *
+ * Called on removal, which is where the Windows driver also drops it: "do not
+ * reset any other place except when setting state to no plug".  Holding 2.7V
+ * for the rest of the session would cost power and would move the headset band
+ * for every later accessory, since the thresholds scale with the bias.
+ *
+ * Only VOUT_CTL is written.  MICB2 is already back under the SDCA model by
+ * now, so CTRL is left exactly as it was found and there is no live bias to
+ * ramp, which is why this does not need wcd9378_mbhc_micb2_set_vout().
+ */
+static void wcd9378_mbhc_spl_headset_release(struct device *dev,
+					     struct regmap *dev_regmap)
+{
+	struct wcd9378_priv *priv = dev_get_drvdata(dev);
+	int ret;
+
+	if (!priv->spl_headset)
+		return;
+
+	ret = regmap_update_bits(dev_regmap, WCD9378_ANA_MICB2_ADDR,
+				 WCD9378_ANA_MICB2_VOUT,
+				 priv->micb2_vout_saved);
+	if (ret) {
+		dev_err(dev, "mbhc: mic bias release: %d\n", ret);
+		return;
+	}
+
+	priv->spl_headset = false;
+
+	dev_err(dev, "mbhc: special headset gone, mic bias back to %dmV\n",
+		1000 + priv->micb2_vout_saved * 50);
 }
 
 /*
@@ -1514,16 +1704,19 @@ static int wcd9378_sdca_post_jack_irq_process(struct sdw_slave *slave,
 
 	/*
 	 * On removal the hardware returns Selected_Mode to Safe_Mode itself and
-	 * software must leave it alone, so there is nothing to classify.
+	 * software must leave it alone, so there is nothing to classify -- only
+	 * a mic bias to hand back if the last accessory was a special headset.
 	 *
 	 * Otherwise: MBHC_CTRL DEVICE_DET ACCESSORY_TYPE is left at its reset
 	 * value 3, so the hardware calls every insertion a headset regardless
 	 * of what was plugged in.  Measure the mic line and correct it.
 	 */
-	if (detected_mode != WCD9378_GE35_MODE_UNPLUGGED)
+	if (detected_mode != WCD9378_GE35_MODE_UNPLUGGED) {
 		wcd9378_mbhc_classify(dev, dev_regmap, selected_mode);
-	else
+	} else {
 		dev_err(dev, "mbhc: unplugged, no classification\n");
+		wcd9378_mbhc_spl_headset_release(dev, dev_regmap);
+	}
 
 	dev_err(dev, "mbhc: ge mode detected %u done, selected %u\n",
 		detected_mode, *selected_mode);
