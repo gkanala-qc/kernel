@@ -24,7 +24,8 @@ static const struct dev_pm_ops wcd9378_sdw_pm_ops = {
 };
 
 static const struct sdw_slave_ops wcd9378_sdw_ops = {
-	.read_prop = wcd9378_sdca_read_prop,
+	.read_prop		= wcd9378_sdca_read_prop,
+	.interrupt_callback	= wcd9378_sdca_interrupt_callback,
 };
 
 static const struct sdw_device_id wcd9378_sdw_id[] = {

@@ -103,12 +103,14 @@ static u32 range_pde_req_ps_data[] = { 0x0, 0x3 };
  * GE 35 SelectedMode -> terminal type.
  *
  * Tambora MBHC only handles mechanical detection; ADC HP/HS
- * discrimination is not implemented, so modes 0 (Unplugged) and 1
- * (Unknown) are aliased to Headphone (mode 4) to keep the DAPM path
- * alive. Mode 2 (Line-out) is not fitted on this board.
+ * discrimination is not implemented, so mode 1 (Unknown) is aliased
+ * to Headphone (mode 4) to keep the DAPM path alive. Mode 2 (Line-out)
+ * is not fitted on this board. Mode 0 (Unplugged/Safe_Mode) has no
+ * Terminal Type per the SDCA spec, and is intentionally left out of
+ * this table -- the GE 35 mode 0 SU route is left disconnected (see
+ * ge35_mode0_controls below) instead of aliasing it to a fake entry.
  */
 static u32 range_ge35_mode_data[] = {
-	0x0, 0x6C0,	/* Unplugged -> HPH (alias) */
 	0x1, 0x6C0,	/* Unknown -> HPH (alias) */
 	0x3, 0x6D0,	/* Headset */
 	0x4, 0x6C0,	/* Headphone */
@@ -368,12 +370,16 @@ static struct sdca_entity *entity_ot43_sources[] = { &wcd9378_sdca_entities[QSJ_
 static struct sdca_entity *entity_ot45_sources[] = { &wcd9378_sdca_entities[QSJ_IT41] };
 
 /*
- * GE 35 mode -> SU selector. Modes 0/1 alias to Headphone (see
+ * GE 35 mode -> SU selector. Mode 1 aliases to Headphone (see
  * range_ge35_mode_data). SU 45 = source 1 (XU 42) for HPH paths,
- * SU 43 = source 1 (XU 42) for Headset.
+ * SU 43 = source 1 (XU 42) for Headset. Mode 0 (Unplugged) leaves
+ * SU 45 disconnected (val = 0x0) rather than aliasing to HPH -- this
+ * is purely DAPM-graph bookkeeping, no register is ever written from
+ * this table (see ge_count_routes()/entity_parse_su_device() in
+ * sdca_asoc.c), so it has no effect on actual hardware behaviour.
  */
 static struct sdca_ge_control ge35_mode0_controls[] = {
-	{ .id = 0x8, .sel = 0x1, .cn = 0x0, .val = 0x1 },
+	{ .id = 0x8, .sel = 0x1, .cn = 0x0, .val = 0x0 },
 };
 
 static struct sdca_ge_control ge35_mode1_controls[] = {
@@ -398,7 +404,7 @@ static struct sdca_ge_mode ge35_modes[] = {
 static struct sdca_control entity_ge35_controls[] = {
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
 	  .interrupt_position = SDCA_NO_INTERRUPT,
-	  .range = { .cols = 0x2, .rows = 0x4, .data = range_ge35_mode_data },
+	  .range = { .cols = 0x2, .rows = 0x3, .data = range_ge35_mode_data },
 	  .label = SDCA_CTL_SELECTED_MODE_NAME },
 	{ .sel = 0x2, .mode = SDCA_ACCESS_MODE_RO, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
 	  .interrupt_position = 4, /* SDCA_4 = GE_DETECTED_MODE, see init_table INTMASK_1 */
@@ -733,8 +739,7 @@ static struct sdca_init_write wcd9378_sdca_init_table[] = {
 	{ .addr = 0x401804F2, .val = 0x80 }, /* DRE_DLY_VAL SWR_HPHL(0) */
 	{ .addr = 0x401804F2, .val = 0x00 }, /* DRE_DLY_VAL SWR_HPHR(0) */
 	{ .addr = 0x40180501, .val = 0x01 }, /* SEQR_CTRL SYS_USAGE_CTRL */
-	/* Arms MBHC: jack insertion asserts SDCA_4 (GE_DETECTED_MODE). */
-	{ .addr = 0x40180601, .val = 0x01 }, /* MBHC_CTRL DEVICE_DET */
+	{ .addr = 0x40180601, .val = 0x03 }, /* MBHC_CTRL DEVICE_DET */
 	{ .addr = 0x40180414, .val = 0x00 }, /* CDC_COMP_CTL_0 */
 	{ .addr = 0x401804F2, .val = 0x88 }, /* DRE_DLY_VAL */
 	{ .addr = 0x40180517, .val = 0x07 }, /* SEQR_CTRL HPH_UP_T7 */
@@ -746,16 +751,11 @@ static struct sdca_init_write wcd9378_sdca_init_table[] = {
 	{ .addr = 0x40C80008, .val = 0x01 }, /* SMP_JACK_CTRL FUNC_ACT (RESET_FUNCTION_NOW) */
 	{ .addr = 0x40C00008, .val = 0x02 }, /* SMP_JACK_CTRL CMT_GRP_MASK */
 	{ .addr = 0x40C80000, .val = 0xFF }, /* SMP_JACK_CTRL FUNC_STAT */
-	{ .addr = 0x00000000, .val = 0x08 }, /* clear DP0 INT status SDCA_CASCADE */
 	{ .addr = 0x00000041, .val = 0x08 }, /* SCP_INT_STATUS_MASK_1 PORT_0_CASCADE_3 */
 	/* Only SDCA_4 unmasked; protection IRQs stay masked. */
 	{ .addr = 0x0000005C, .val = 0x10 }, /* INTMASK_1 SDCA_4 (GE_DETECTED_MODE) */
 	{ .addr = 0x4018016A, .val = 0x00 }, /* CP_DTOP_CTRL_14 */
 	{ .addr = 0x40180165, .val = 0x6b }, /* CP_DTOP_CTRL_9 */
-	/*
-	 * L_DET_EN is left disabled: asserting SDCA_4 before the machine
-	 * card registers the jack blocks the deferred card probe.
-	 */
 };
 
 /* Function Descriptor */
@@ -780,12 +780,56 @@ static struct sdca_function_data wcd9378_sdca_data = {
 /* Vendor SCP register: host clock divide-by-2 (bank 1 shadow). */
 #define WCD9378_SCP_HOST_CLK_DIV2_CTL_B1	0xF0
 
+#define WCD9378_ANA_MBHC_MECH_ADDR		0x40180014
+#define WCD9378_ANA_MBHC_MECH_ENABLE		0xB5
+#define WCD9378_ANA_MBHC_MECH_DET_TYP		0x20
+#define WCD9378_ANA_MBHC_ELECT_ADDR		0x40180015
+#define WCD9378_ANA_MBHC_ELECT_BIAS_EN		0x01
+#define WCD9378_MBHC_NEW_INT_MECH_DET_CURRENT_ADDR	0x401801b1
+#define WCD9378_MBHC_HSDET_PULLUP_CTL_2P0_UA		0x08
+#define WCD9378_MBHC_NEW_PLUG_DETECT_CTL_ADDR		0x40180122
+#define WCD9378_MBHC_INSREM_DBNC_96MS			0x06
+#define WCD9378_MBHC_NEW_CTL_1_ADDR		0x40180120
+#define WCD9378_MBHC_NEW_CTL_1_RCO_EN		0x80
+
 /* Slave ports 1..8, mapped to master ports via qcom,port-mapping. */
 #define WCD9378_SDCA_MAX_PORTS			8
 
 static const char * const wcd9378_sdca_supplies[] = {
 	"vdd-buck", "vdd-rxtx", "vdd-io", "vdd-mic-bias",
 };
+
+/*
+ * The SDCA specification defines DP0_INT.SDCA_CASCADE as the read-only
+ * output of an OR over the post-mask SDCA interrupt status bits, with no
+ * clear path of its own, so the bus driver deliberately never writes it.
+ *
+ * This part deviates: the bit latches.  Measured on a jack insert, with
+ * both reads issued back to back on the same bus with nothing in between,
+ * all four SCP_SDCA_INT1-4 registers read 0x00 while DP0_INT still read
+ * 0x08.  Left asserted it holds SCP_INT1.PORT_0 set, the peripheral never
+ * leaves ALERT, and sdw_handle_slave_alerts() spins to MAX_RETRY on every
+ * jack event.
+ *
+ * Clear it here rather than in the bus driver: this callback runs after
+ * handle_nested_irq() has serviced the cascaded SDCA sources and before
+ * the bus re-reads DP0_INT for its end-of-iteration check, so it is the
+ * one place the write is both safe and effective.
+ */
+int wcd9378_sdca_interrupt_callback(struct sdw_slave *slave,
+				    struct sdw_slave_intr_status *status)
+{
+	int ret;
+
+	if (!status->sdca_cascade)
+		return 0;
+
+	ret = sdw_write_no_pm(slave, SDW_DP0_INT, SDW_DP0_SDCA_CASCADE);
+	if (ret < 0)
+		dev_err(&slave->dev, "SDCA_CASCADE clear failed:%d\n", ret);
+
+	return 0;
+}
 
 int wcd9378_sdca_read_prop(struct sdw_slave *slave)
 {
@@ -890,8 +934,99 @@ static int wcd9378_sdca_populate_function(struct sdw_slave *slave,
 	return 0;
 }
 
+static int wcd9378_sdca_set_jack(struct sdw_slave *slave, struct regmap *dev_regmap)
+{
+	struct device *dev = &slave->dev;
+	int ret;
+
+	ret = pm_runtime_resume_and_get(dev);
+	if (ret < 0) {
+		dev_err(dev, "failed to resume for jack detect enable: %d\n", ret);
+		return ret;
+	}
+
+	ret = regmap_write(dev_regmap, WCD9378_MBHC_NEW_INT_MECH_DET_CURRENT_ADDR,
+			   WCD9378_MBHC_HSDET_PULLUP_CTL_2P0_UA);
+	if (ret) {
+		dev_err(dev, "MBHC_NEW_INT_MECH_DET_CURRENT: %d\n", ret);
+		goto out;
+	}
+
+	ret = regmap_write(dev_regmap, WCD9378_ANA_MBHC_MECH_ADDR,
+			   WCD9378_ANA_MBHC_MECH_ENABLE);
+	if (ret) {
+		dev_err(dev, "ANA_MBHC_MECH: %d\n", ret);
+		goto out;
+	}
+
+	ret = regmap_write(dev_regmap, WCD9378_MBHC_NEW_PLUG_DETECT_CTL_ADDR,
+			   WCD9378_MBHC_INSREM_DBNC_96MS);
+	if (ret) {
+		dev_err(dev, "MBHC_NEW_PLUG_DETECT_CTL: %d\n", ret);
+		goto out;
+	}
+
+	ret = regmap_write(dev_regmap, WCD9378_ANA_MBHC_ELECT_ADDR,
+			   WCD9378_ANA_MBHC_ELECT_BIAS_EN);
+	if (ret) {
+		dev_err(dev, "ANA_MBHC_ELECT: %d\n", ret);
+		goto out;
+	}
+
+	ret = regmap_write(dev_regmap, WCD9378_MBHC_NEW_CTL_1_ADDR,
+			   WCD9378_MBHC_NEW_CTL_1_RCO_EN);
+	if (ret)
+		dev_err(dev, "MBHC_NEW_CTL_1: %d\n", ret);
+
+out:
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
+
+	return ret;
+}
+
+/*
+ * MECH_DET_TYP selects which transition direction (insert/remove) the
+ * mechanical comparator is armed for; toggle it after every GE 35
+ * DETECTED_MODE interrupt so the opposite-direction transition is still
+ * seen next time.
+ */
+static int wcd9378_sdca_post_jack_irq_process(struct sdw_slave *slave,
+					       struct regmap *dev_regmap)
+{
+	struct device *dev = &slave->dev;
+	unsigned int val;
+	int ret;
+
+	ret = pm_runtime_resume_and_get(dev);
+	if (ret < 0) {
+		dev_err(dev, "failed to resume for mech detect rearm: %d\n", ret);
+		return ret;
+	}
+
+	ret = regmap_read(dev_regmap, WCD9378_ANA_MBHC_MECH_ADDR, &val);
+	if (ret) {
+		dev_err(dev, "ANA_MBHC_MECH read for rearm: %d\n", ret);
+		goto out;
+	}
+
+	val ^= WCD9378_ANA_MBHC_MECH_DET_TYP;
+
+	ret = regmap_write(dev_regmap, WCD9378_ANA_MBHC_MECH_ADDR, val);
+	if (ret)
+		dev_err(dev, "ANA_MBHC_MECH write for rearm: %d\n", ret);
+
+out:
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
+
+	return ret;
+}
+
 static const struct sdca_class_hw_ops wcd9378_sdca_class_ops = {
-	.populate_function = wcd9378_sdca_populate_function,
+	.populate_function	= wcd9378_sdca_populate_function,
+	.set_jack		= wcd9378_sdca_set_jack,
+	.post_jack_irq_process	= wcd9378_sdca_post_jack_irq_process,
 };
 
 int wcd9378_sdca_probe(struct sdw_slave *slave,

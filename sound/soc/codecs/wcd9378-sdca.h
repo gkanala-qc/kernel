@@ -11,6 +11,8 @@ int  wcd9378_sdca_probe(struct sdw_slave *slave,
 			const struct sdw_device_id *id);
 void wcd9378_sdca_remove(struct sdw_slave *slave);
 int  wcd9378_sdca_read_prop(struct sdw_slave *slave);
+int  wcd9378_sdca_interrupt_callback(struct sdw_slave *slave,
+				     struct sdw_slave_intr_status *status);
 
 int wcd9378_sdca_runtime_suspend(struct device *dev);
 int wcd9378_sdca_runtime_resume(struct device *dev);
