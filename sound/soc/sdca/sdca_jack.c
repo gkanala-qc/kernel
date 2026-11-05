@@ -19,6 +19,7 @@
 #include <sound/control.h>
 #include <sound/jack.h>
 #include <sound/sdca.h>
+#include <sound/sdca_class.h>
 #include <sound/sdca_function.h>
 #include <sound/sdca_interrupts.h>
 #include <sound/sdca_jack.h>
@@ -36,6 +37,7 @@ int sdca_jack_process(struct sdca_interrupt *interrupt)
 {
 	struct device *dev = interrupt->dev;
 	struct snd_soc_component *component = interrupt->component;
+	struct sdca_class_drv *core = interrupt->info->core;
 	struct snd_soc_card *card = component->card;
 	struct rw_semaphore *rwsem = &card->snd_card->controls_rwsem;
 	struct jack_state *state = interrupt->priv;
@@ -81,6 +83,13 @@ int sdca_jack_process(struct sdca_interrupt *interrupt)
 	}
 
 	dev_dbg(dev, "%s: %#x\n", interrupt->name, val);
+
+	if (core->hw_ops && core->hw_ops->post_jack_irq_process) {
+		ret = core->hw_ops->post_jack_irq_process(core->sdw,
+							  core->dev_regmap);
+		if (ret)
+			dev_warn(dev, "jack post-process failed: %d\n", ret);
+	}
 
 	ucontrol = kzalloc_obj(*ucontrol);
 	if (!ucontrol)

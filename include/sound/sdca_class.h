@@ -30,11 +30,29 @@ struct sdca_function_data;
  *           from static tables in place of sdca_parse_function() on
  *           DT/non-DisCo platforms.  Must leave @function->desc alone.
  *           Return 0 on success or a negative errno.  May be NULL.
+ * @set_jack: called from the SDCA class function driver's ASoC .set_jack,
+ *           after the jack has been registered with sdca_jack_set_jack();
+ *           use to enable hardware detection (e.g. arm the MBHC comparator)
+ *           that must not be turned on any earlier, since doing so before
+ *           the machine driver has finished registering the jack can raise
+ *           a detection interrupt that blocks the deferred card probe.
+ *           May be NULL.
+ * @post_jack_irq_process: called from sdca_jack_process() after the jack
+ *           interrupt has been read but before its result is applied, on
+ *           every such interrupt, unlike @set_jack which runs only once
+ *           at jack registration; use to re-arm hardware
+ *           detection logic that must be reconfigured after every
+ *           transition (e.g. toggling a mechanical comparator's
+ *           polarity-select bit so the next opposite-direction transition
+ *           is still seen).  May be NULL.
  */
 struct sdca_class_hw_ops {
 	int (*hw_init)(struct sdw_slave *slave);
 	int (*populate_function)(struct sdw_slave *slave,
 				 struct sdca_function_data *function);
+	int (*set_jack)(struct sdw_slave *slave, struct regmap *dev_regmap);
+	int (*post_jack_irq_process)(struct sdw_slave *slave,
+				     struct regmap *dev_regmap);
 };
 
 struct sdca_class_drv {

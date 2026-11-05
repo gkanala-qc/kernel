@@ -620,6 +620,11 @@ EXPORT_SYMBOL_NS_GPL(sdca_irq_cleanup_late, "SND_SOC_SDCA");
 /**
  * devm_sdca_irq_allocate - allocate an SDCA interrupt structure for a device
  * @sdev: Device pointer against which things should be allocated.
+ * @core: Pointer to the SDCA class driver for this device, giving
+ * Function-level interrupt handlers a typed route to the device-level
+ * driver and its hw_ops.  drvdata cannot serve that purpose: it belongs
+ * to the codec driver, which may embed its sdca_class_drv in a larger
+ * private struct.
  * @regmap: regmap to be used for accessing the SDCA IRQ registers.
  * @irq: The interrupt number.
  *
@@ -631,6 +636,7 @@ EXPORT_SYMBOL_NS_GPL(sdca_irq_cleanup_late, "SND_SOC_SDCA");
  * error code.
  */
 struct sdca_interrupt_info *devm_sdca_irq_allocate(struct device *sdev,
+						   struct sdca_class_drv *core,
 						   struct regmap *regmap, int irq)
 {
 	struct sdca_interrupt_info *info;
@@ -641,9 +647,12 @@ struct sdca_interrupt_info *devm_sdca_irq_allocate(struct device *sdev,
 		return ERR_PTR(-ENOMEM);
 
 	info->irq_chip = sdca_irq_chip;
+	info->core = core;
 
-	for (i = 0; i < ARRAY_SIZE(info->irqs); i++)
+	for (i = 0; i < ARRAY_SIZE(info->irqs); i++) {
+		info->irqs[i].info = info;
 		info->irqs[i].device_regmap = regmap;
+	}
 
 	ret = devm_mutex_init(sdev, &info->irq_lock);
 	if (ret)

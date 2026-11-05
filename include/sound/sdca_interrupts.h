@@ -16,6 +16,7 @@
 
 struct device;
 struct snd_soc_component;
+struct sdca_class_drv;
 struct sdca_function_data;
 
 #define SDCA_MAX_INTERRUPTS 31 /* the last bit is reserved for future extensions */
@@ -23,6 +24,7 @@ struct sdca_function_data;
 /**
  * struct sdca_interrupt - contains information about a single SDCA interrupt
  * @name: The name of the interrupt.
+ * @info: Pointer to the interrupt information that owns this interrupt.
  * @dev: Pointer to the Function device.
  * @device_regmap: Pointer to the IRQ regmap.
  * @function_regmap: Pointer to the SDCA Function regmap.
@@ -40,6 +42,7 @@ struct sdca_function_data;
 struct sdca_interrupt {
 	const char *name;
 
+	struct sdca_interrupt_info *info;
 	struct device *dev;
 	struct regmap *device_regmap;
 	struct regmap *function_regmap;
@@ -60,12 +63,17 @@ struct sdca_interrupt {
  * struct sdca_interrupt_info - contains top-level SDCA interrupt information
  * @irq_chip: regmap irq chip structure.
  * @irq_data: regmap irq chip data structure.
+ * @core: Pointer to the device-level SDCA class driver that owns this
+ * interrupt information, used by Function-level handlers to reach the
+ * device's hw_ops.
  * @irqs: Array of data for each individual IRQ.
  * @irq_lock: Protects access to the list of sdca_interrupt structures.
  */
 struct sdca_interrupt_info {
 	struct regmap_irq_chip irq_chip;
 	struct regmap_irq_chip_data *irq_data;
+
+	struct sdca_class_drv *core;
 
 	struct sdca_interrupt irqs[SDCA_MAX_INTERRUPTS];
 
@@ -97,6 +105,7 @@ void sdca_irq_cleanup_late(struct device *dev,
 			   struct sdca_interrupt_info *info);
 
 struct sdca_interrupt_info *devm_sdca_irq_allocate(struct device *dev,
+						   struct sdca_class_drv *core,
 						   struct regmap *regmap, int irq);
 
 void sdca_irq_enable_early(struct sdca_function_data *function,

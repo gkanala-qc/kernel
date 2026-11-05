@@ -220,6 +220,14 @@ static int class_function_set_jack(struct snd_soc_component *component,
 {
 	struct class_function_drv *drv = snd_soc_component_get_drvdata(component);
 	struct sdca_class_drv *core = drv->core;
+	int ret;
+
+	if (core->hw_ops && core->hw_ops->set_jack) {
+		ret = core->hw_ops->set_jack(core->sdw, core->dev_regmap);
+		if (ret)
+			dev_warn(component->dev,
+				 "failed to enable hardware jack detection: %d\n", ret);
+	}
 
 	return sdca_jack_set_jack(core->irq_info, jack);
 }
