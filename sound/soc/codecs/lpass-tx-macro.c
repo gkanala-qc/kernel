@@ -185,7 +185,28 @@
 #define CDC_TX7_TX_PATH_SEC4		(0x07A0)
 #define CDC_TX7_TX_PATH_SEC5		(0x07A4)
 #define CDC_TX7_TX_PATH_SEC6		(0x07A8)
-#define TX_MAX_OFFSET			(0x07A8)
+#define TX_MAX_OFFSET_PRE_2_8		(0x07A8)
+
+#define CDC_TX_INP_MUX_ADC_MUXn_CFG2(n)		(0x0140 + 0x4 * n)
+#define CDC_TXn_TX_PATH_CFG2(n)			(0x0430 + 0x80 * n)
+
+/*
+ * Per-decimator adaptive high-pass (ADPT) block, eight instances. Listed in
+ * full to describe the layout; SPARE0 of the last instance is the top of the
+ * register map.
+ */
+#define TX_ADPT_START_OFFSET			(0x0800)
+#define CDC_TXn_ADPT_CTRL(n)			(0x0800 + 0x80 * n)
+#define CDC_TXn_ADPT_GAIN_0(n)			(0x0804 + 0x80 * n)
+#define CDC_TXn_ADPT_GAIN_1(n)			(0x0808 + 0x80 * n)
+#define CDC_TXn_ADPT_DH_FSM_CTRL(n)		(0x080C + 0x80 * n)
+#define CDC_TXn_ADPT_CUTOFF_FSM_CTRL(n, i)	(0x0810 + 0x80 * n + 0x4 * i)
+#define TX_ADPT_NUM_CUTOFF_FSM_CTRL		7
+#define CDC_TXn_ADPT_DBG_CTRL(n)		(0x0830 + 0x80 * n)
+#define CDC_TXn_ADPT_DBG_PDM_RATE_CTRL_0(n)	(0x0834 + 0x80 * n)
+#define CDC_TXn_ADPT_DBG_PDM_RATE_CTRL_1(n)	(0x0838 + 0x80 * n)
+#define CDC_TXn_ADPT_SPARE0(n)			(0x083C + 0x80 * n)
+#define TX_MAX_OFFSET				(0x0BBC)
 
 #define TX_MACRO_RATES (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |\
 			SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000 |\
@@ -433,8 +454,21 @@ static struct reg_default tx_defaults[] = {
 	{ CDC_TX7_TX_PATH_SEC6, 0x00},
 };
 
+static bool tx_macro_has_adpt(void)
+{
+	return lpass_macro_get_codec_version() >= LPASS_CODEC_VERSION_2_8;
+}
+
 static bool tx_is_volatile_register(struct device *dev, unsigned int reg)
 {
+	/*
+	 * The ADPT block is driven by a hardware FSM and has no entry in
+	 * tx_defaults[], so never cache it - a cached read would return the
+	 * last value written rather than the state the FSM has reached.
+	 */
+	if (reg >= TX_ADPT_START_OFFSET && reg <= TX_MAX_OFFSET)
+		return true;
+
 	/* Update volatile list for tx/tx macros */
 	switch (reg) {
 	case CDC_TX_TOP_CSR_SWR_DMIC0_CTL:
@@ -450,6 +484,27 @@ static bool tx_is_volatile_register(struct device *dev, unsigned int reg)
 
 static bool tx_is_rw_register(struct device *dev, unsigned int reg)
 {
+	/*
+	 * Registers that only exist from codec version 2.8 onwards: the ADPT
+	 * block, which runs from TX_ADPT_START_OFFSET to the top of the map,
+	 * and two sets of CFG2 registers strided into the older space. Matched
+	 * by range rather than by case label, the ADPT block alone being 128 of
+	 * them; TX_PATH_CFG2 needs its stride tested as well.
+	 */
+	if (tx_macro_has_adpt()) {
+		if (reg >= TX_ADPT_START_OFFSET)
+			return true;
+		if (reg >= CDC_TX_INP_MUX_ADC_MUXn_CFG2(0) &&
+		    reg <= CDC_TX_INP_MUX_ADC_MUXn_CFG2(NUM_DECIMATORS - 1))
+			return true;
+		if (reg >= CDC_TXn_TX_PATH_CFG2(0) &&
+		    reg <= CDC_TXn_TX_PATH_CFG2(NUM_DECIMATORS - 1) &&
+		    !((reg - CDC_TXn_TX_PATH_CFG2(0)) % 0x80))
+			return true;
+	} else if (reg > TX_MAX_OFFSET_PRE_2_8) {
+		return false;
+	}
+
 	switch (reg) {
 	case CDC_TX_CLK_RST_CTRL_MCLK_CONTROL:
 	case CDC_TX_CLK_RST_CTRL_FS_CNT_CONTROL:
@@ -602,6 +657,11 @@ static const struct regmap_config tx_regmap_config = {
 	.val_bits = 32,
 	.reg_stride = 4,
 	.cache_type = REGCACHE_MAPLE,
+	/*
+	 * Ceiling for the newest register map. On older silicon the registers
+	 * above TX_MAX_OFFSET_PRE_2_8 do not exist, and tx_is_rw_register()
+	 * keeps them unreachable there.
+	 */
 	.max_register = TX_MAX_OFFSET,
 	.reg_defaults = tx_defaults,
 	.num_reg_defaults = ARRAY_SIZE(tx_defaults),
@@ -906,6 +966,32 @@ static int tx_macro_tx_mixer_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
+#define TX_ADPT_CTRL_BYPASS			0x00
+
+/*
+ * Take the per-decimator adaptive high-pass (ADPT) block out of the path. The
+ * block exists from codec version 2.8 onwards and comes out of reset enabled,
+ * with ADPT_CTRL 0x51, but tuned for a PDM rate the decimator does not run at.
+ * Left that way it both adds broadband noise and fails to remove the DC it is
+ * there to remove.
+ *
+ * Tuning the block instead would need values that depend on the microphone and
+ * on the board and cannot be derived here, so bypass it rather than run it
+ * untuned.
+ */
+static void tx_macro_bypass_adpt(struct snd_soc_component *component,
+				 u8 decimator)
+{
+	if (!tx_macro_has_adpt())
+		return;
+
+	/* settle after the SWR mic clock programming in PRE_PMU */
+	usleep_range(5000, 5050);
+
+	snd_soc_component_write(component, CDC_TXn_ADPT_CTRL(decimator),
+				TX_ADPT_CTRL_BYPASS);
+}
+
 static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 			       struct snd_kcontrol *kcontrol, int event)
 {
@@ -949,6 +1035,7 @@ static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 					      CDC_TXn_PGA_MUTE_MASK, 0x1);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
+		tx_macro_bypass_adpt(component, decimator);
 		snd_soc_component_write_field(component, tx_vol_ctl_reg,
 					     CDC_TXn_CLK_EN_MASK, 0x1);
 		if (!is_amic_enabled(component, tx, decimator)) {
