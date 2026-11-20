@@ -244,37 +244,51 @@ static int ctrl_ot236_dp_vals[] = { 0x5 };
 /* Entity 0 (Function) Controls */
 static struct sdca_control entity0_controls[] = {
 	{ .sel = 0x1,  .mode = SDCA_ACCESS_MODE_RW,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_COMMIT_GROUP_MASK_NAME },
 	{ .sel = 0x4,  .mode = SDCA_ACCESS_MODE_DC,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_fun_sdca_ver_vals, .has_fixed = true,
 	  .label = SDCA_CTL_FUNCTION_SDCA_VERSION_NAME },
 	{ .sel = 0x5,  .mode = SDCA_ACCESS_MODE_DC,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_fun_type_vals, .has_fixed = true,
 	  .label = SDCA_CTL_FUNCTION_TYPE_NAME },
 	{ .sel = 0x6,  .mode = SDCA_ACCESS_MODE_DC,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_fun_man_id_vals, .has_fixed = true,
 	  .label = SDCA_CTL_FUNCTION_MANUFACTURER_ID_NAME },
 	{ .sel = 0x7,  .mode = SDCA_ACCESS_MODE_DC,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_fun_id_vals, .has_fixed = true,
 	  .label = SDCA_CTL_FUNCTION_ID_NAME },
 	{ .sel = 0x8,  .mode = SDCA_ACCESS_MODE_DC,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_fun_ver_vals, .has_fixed = true,
 	  .label = SDCA_CTL_FUNCTION_VERSION_NAME },
 	{ .sel = 0x9,  .mode = SDCA_ACCESS_MODE_RO,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_FUNCTION_EXTENSION_ID_NAME },
 	{ .sel = 0xA,  .mode = SDCA_ACCESS_MODE_RO,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_FUNCTION_EXTENSION_VERSION_NAME },
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_RW1C, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .is_volatile = true, .label = SDCA_CTL_FUNCTION_STATUS_NAME },
 	{ .sel = 0x11, .mode = SDCA_ACCESS_MODE_RW1S, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_FUNCTION_ACTION_NAME },
 	{ .sel = 0x2C, .mode = SDCA_ACCESS_MODE_RO,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_DEVICE_MANUFACTURER_ID_NAME },
 	{ .sel = 0x2D, .mode = SDCA_ACCESS_MODE_RO,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_DEVICE_PART_ID_NAME },
 	{ .sel = 0x2E, .mode = SDCA_ACCESS_MODE_RO,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_DEVICE_VERSION_NAME },
 	{ .sel = 0x2F, .mode = SDCA_ACCESS_MODE_DC,   .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_dev_sdca_ver_vals, .has_fixed = true,
 	  .label = SDCA_CTL_DEVICE_SDCA_VERSION_NAME },
 };
@@ -282,15 +296,19 @@ static struct sdca_control entity0_controls[] = {
 /* Entity 1 (IT 41) Controls */
 static struct sdca_control entity_it41_controls[] = {
 	{ .sel = 0x4,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x7, .rows = 0x1, .data = range_it41_usage_data },
 	  .label = SDCA_CTL_USAGE_NAME },
 	{ .sel = 0x8,  .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it41_latency_vals, .has_fixed = true, .label = SDCA_CTL_LATENCY_NAME },
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it41_cluster_vals, .has_fixed = true,
 	  .range = { .cols = 0x2, .rows = 0x1, .data = range_it41_cluster_data },
 	  .label = SDCA_CTL_CLUSTERINDEX_NAME },
 	{ .sel = 0x11, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it41_dp_vals, .has_fixed = true,
 	  .range = { .cols = 0x10, .rows = 0x4, .data = range_it41_dp_data },
 	  .label = SDCA_CTL_DATAPORT_SELECTOR_NAME },
@@ -299,6 +317,7 @@ static struct sdca_control entity_it41_controls[] = {
 /* Entity 2 (CS 41) Controls */
 static struct sdca_control entity_cs41_controls[] = {
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_cs41_sr_vals, .has_fixed = true,
 	  .range = { .cols = 0x2, .rows = 0x1, .data = range_cs41_sr_data },
 	  .label = SDCA_CTL_SAMPLERATEINDEX_NAME },
@@ -312,6 +331,7 @@ static struct sdca_entity *entity_mfpu21_sources[] = {
 
 static struct sdca_control entity_mfpu21_controls[] = {
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_mfpu21_bypass_vals, .has_fixed = true, .label = SDCA_CTL_BYPASS_NAME },
 };
 
@@ -320,10 +340,13 @@ static struct sdca_entity *entity_xu42_sources[] = { &wcd9378_sdca_entities[QSJ_
 
 static struct sdca_control entity_xu42_controls[] = {
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .label = SDCA_CTL_BYPASS_NAME },
 	{ .sel = 0x7, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_xu42_id_vals, .has_fixed = true, .label = SDCA_CTL_XU_ID_NAME },
 	{ .sel = 0x8, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_xu42_ver_vals, .has_fixed = true, .label = SDCA_CTL_XU_VERSION_NAME },
 };
 
@@ -332,6 +355,7 @@ static struct sdca_entity *entity_su43_sources[] = { &wcd9378_sdca_entities[QSJ_
 
 static struct sdca_control entity_su43_controls[] = {
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_RO, .layers = SDCA_ACCESS_LAYER_DEVICE,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .cn_list = 0x1,
 	  .range = { .cols = 0x1, .rows = 0x2, .data = range_su_sel_data },
 	  .label = SDCA_CTL_SELECTOR_NAME },
@@ -342,6 +366,7 @@ static struct sdca_entity *entity_su45_sources[] = { &wcd9378_sdca_entities[QSJ_
 
 static struct sdca_control entity_su45_controls[] = {
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_RO, .layers = SDCA_ACCESS_LAYER_DEVICE,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .cn_list = 0x1,
 	  .range = { .cols = 0x1, .rows = 0x2, .data = range_su_sel_data },
 	  .label = SDCA_CTL_SELECTOR_NAME },
@@ -364,9 +389,11 @@ static struct sdca_pde_delay pde47_delays[] = {
 
 static struct sdca_control entity_pde47_controls[] = {
 	{ .sel = 0x1,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x1, .rows = 0x2, .data = range_pde_req_ps_data },
 	  .label = SDCA_CTL_REQUESTED_PS_NAME },
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_RO, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .is_volatile = true, .label = SDCA_CTL_ACTUAL_PS_NAME },
 	/*
 	 * HPH protection IRQs (OCP/CNP/SURGE) fire in codec HW but are
@@ -423,15 +450,19 @@ static struct sdca_control entity_ge35_controls[] = {
 
 static struct sdca_control entity_it131_controls[] = {
 	{ .sel = 0x4,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x7, .rows = 0x1, .data = range_it131_usage_data },
 	  .label = SDCA_CTL_USAGE_NAME },
 	{ .sel = 0x8,  .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it131_latency_vals, .has_fixed = true, .label = SDCA_CTL_LATENCY_NAME },
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it131_cluster_vals, .has_fixed = true,
 	  .range = { .cols = 0x2, .rows = 0x1, .data = range_it131_cluster_data },
 	  .label = SDCA_CTL_CLUSTERINDEX_NAME },
 	{ .sel = 0x11, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it131_dp_vals, .has_fixed = true,
 	  .range = { .cols = 0x10, .rows = 0x4, .data = range_it131_dp_data },
 	  .label = SDCA_CTL_DATAPORT_SELECTOR_NAME },
@@ -440,6 +471,7 @@ static struct sdca_control entity_it131_controls[] = {
 /* Entity 0xE (CS 131) Controls */
 static struct sdca_control entity_cs131_controls[] = {
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_cs131_sr_vals, .has_fixed = true,
 	  .range = { .cols = 0x2, .rows = 0x1, .data = range_cs131_sr_data },
 	  .label = SDCA_CTL_SAMPLERATEINDEX_NAME },
@@ -448,16 +480,20 @@ static struct sdca_control entity_cs131_controls[] = {
 /* Entity 0xF (IT 33) - headset mic input */
 static struct sdca_control entity_it33_controls[] = {
 	{ .sel = 0x3,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it33_micbias_vals, .has_default = true,
 	  .range = { .cols = 0x1, .rows = 0x1, .data = range_it33_micbias_data },
 	  .label = SDCA_CTL_MIC_BIAS_NAME },
 	{ .sel = 0x4,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x7, .rows = 0x1, .data = range_it33_usage_data },
 	  .has_reset = true,
 	  .label = SDCA_CTL_USAGE_NAME },
 	{ .sel = 0x8,  .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it33_latency_vals, .has_fixed = true, .label = SDCA_CTL_LATENCY_NAME },
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_it33_cluster_vals, .has_fixed = true,
 	  .range = { .cols = 0x2, .rows = 0x1, .data = range_it33_cluster_data },
 	  .label = SDCA_CTL_CLUSTERINDEX_NAME },
@@ -473,9 +509,11 @@ static struct sdca_pde_delay pde34_delays[] = {
 
 static struct sdca_control entity_pde34_controls[] = {
 	{ .sel = 0x1,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x1, .rows = 0x2, .data = range_pde_req_ps_data },
 	  .label = SDCA_CTL_REQUESTED_PS_NAME },
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_RO, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .is_volatile = true, .label = SDCA_CTL_ACTUAL_PS_NAME },
 };
 
@@ -494,10 +532,12 @@ static u32 range_fu6_vol_data[] = {
 
 static struct sdca_control entity_fu6_controls[] = {
 	{ .sel = SDCA_CTL_FU_MUTE, .mode = SDCA_ACCESS_MODE_DUAL,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .layers = SDCA_ACCESS_LAYER_USER, .cn_list = 0x6, .nbits = 1,
 	  .type = SDCA_CTL_DATATYPE_ONEBIT,
 	  .label = SDCA_CTL_MUTE_NAME },
 	{ .sel = SDCA_CTL_FU_CHANNEL_VOLUME, .mode = SDCA_ACCESS_MODE_DUAL,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .layers = SDCA_ACCESS_LAYER_USER, .cn_list = 0x6, .nbits = 16,
 	  .type = SDCA_CTL_DATATYPE_Q7P8DB,
 	  .range = { .cols = SDCA_VOLUME_LINEAR_NCOLS, .rows = 1,
@@ -513,6 +553,7 @@ static struct sdca_entity *entity_su35_sources[] = { &wcd9378_sdca_entities[QSJ_
 
 static struct sdca_control entity_su35_controls[] = {
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_RO, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x1, .rows = 0x2, .data = range_su_sel_data },
 	  .label = SDCA_CTL_SELECTOR_NAME },
 };
@@ -523,16 +564,20 @@ static struct sdca_entity *entity_xu36_sources[] = { &wcd9378_sdca_entities[QSJ_
 static struct sdca_control entity_xu36_controls[] = {
 	/* bypass=1: pass mic signal through XU36 without proprietary processing */
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_xu36_bypass_vals, .has_default = true, .label = SDCA_CTL_BYPASS_NAME },
 	{ .sel = 0x7, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_xu36_id_vals, .has_fixed = true, .label = SDCA_CTL_XU_ID_NAME },
 	{ .sel = 0x8, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_xu36_ver_vals, .has_fixed = true, .label = SDCA_CTL_XU_VERSION_NAME },
 };
 
 /* Entity 0x15 (CS 36) Controls */
 static struct sdca_control entity_cs36_controls[] = {
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_cs36_sr_vals, .has_fixed = true,
 	  .range = { .cols = 0x2, .rows = 0x1, .data = range_cs36_sr_data },
 	  .label = SDCA_CTL_SAMPLERATEINDEX_NAME },
@@ -543,11 +588,14 @@ static struct sdca_entity *entity_ot36_sources[] = { &wcd9378_sdca_entities[QSJ_
 
 static struct sdca_control entity_ot36_controls[] = {
 	{ .sel = 0x4,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x7, .rows = 0x1, .data = range_ot36_usage_data },
 	  .label = SDCA_CTL_USAGE_NAME },
 	{ .sel = 0x8,  .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_ot36_latency_vals, .has_fixed = true, .label = SDCA_CTL_LATENCY_NAME },
 	{ .sel = 0x11, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_ot36_dp_vals, .has_fixed = true,
 	  .range = { .cols = 0x10, .rows = 0x4, .data = range_ot36_dp_data },
 	  .label = SDCA_CTL_DATAPORT_SELECTOR_NAME },
@@ -556,12 +604,14 @@ static struct sdca_control entity_ot36_controls[] = {
 /* Entity 0x17 (MFPU 236) Controls */
 static struct sdca_control entity_mfpu236_controls[] = {
 	{ .sel = 0x1, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_mfpu236_bypass_vals, .has_fixed = true, .label = SDCA_CTL_BYPASS_NAME },
 };
 
 /* Entity 0x18 (CS 236) Controls */
 static struct sdca_control entity_cs236_controls[] = {
 	{ .sel = 0x10, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_cs236_sr_vals, .has_fixed = true,
 	  .range = { .cols = 0x2, .rows = 0x1, .data = range_cs236_sr_data },
 	  .label = SDCA_CTL_SAMPLERATEINDEX_NAME },
@@ -572,11 +622,14 @@ static struct sdca_entity *entity_ot236_sources[] = { &wcd9378_sdca_entities[QSJ
 
 static struct sdca_control entity_ot236_controls[] = {
 	{ .sel = 0x4,  .mode = SDCA_ACCESS_MODE_RW, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .range = { .cols = 0x7, .rows = 0x1, .data = range_ot236_usage_data },
 	  .label = SDCA_CTL_USAGE_NAME },
 	{ .sel = 0x8,  .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_ot236_latency_vals, .has_fixed = true, .label = SDCA_CTL_LATENCY_NAME },
 	{ .sel = 0x11, .mode = SDCA_ACCESS_MODE_DC, .layers = SDCA_ACCESS_LAYER_CLASS, .cn_list = 0x1,
+	  .interrupt_position = SDCA_NO_INTERRUPT,
 	  .values = ctrl_ot236_dp_vals, .has_fixed = true,
 	  .range = { .cols = 0x10, .rows = 0x4, .data = range_ot236_dp_data },
 	  .label = SDCA_CTL_DATAPORT_SELECTOR_NAME },
